@@ -44,6 +44,11 @@ memory:
   rag_top_k: 4
   summarize_after_turns: 40
 
+update:                                   # 自動アップデート(GitHub Releases)
+  auto_check: true                        # 起動時に新版を確認
+  auto_install: false                     # true なら確認なしでDL+適用(exe時のみ)
+  repo: "liasvistreamgamemusic-sketch/AIchan"
+
 discord:
   enabled: false
   token: ""

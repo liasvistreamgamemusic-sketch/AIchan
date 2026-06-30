@@ -11,8 +11,23 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-ASSETS_ROOT = REPO_ROOT / "assets" / "characters"
+def _bundle_root() -> Path:
+    """読み取り専用リソース(assets等)の基準。PyInstaller凍結時はバンドル先。"""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parent.parent
+
+
+def _app_dir() -> Path:
+    """ユーザーが編集する config.yaml の場所。凍結時は exe と同じフォルダ。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent.parent
+
+
+REPO_ROOT = _bundle_root()          # 後方互換の名前(= バンドル/開発ルート)
+APP_DIR = _app_dir()
+ASSETS_ROOT = REPO_ROOT / "assets" / "characters"   # 同梱の既定アセット(読み取り)
 
 
 def _default_data_dir() -> Path:
@@ -102,30 +117,37 @@ SRC_CHARACTER_ROOT = REPO_ROOT / "character"   # 立ち絵原本(green screen)
 
 
 def character_dir(character_id: str) -> Path:
+    """同梱の既定アセット(読み取り)。"""
     return ASSETS_ROOT / character_id
 
 
+def user_character_dir(character_id: str) -> Path:
+    """ユーザー編集分(ペルソナ・立ち絵差し替え)の書き込み先。凍結exeでも書ける。"""
+    return DATA_DIR / "characters" / character_id
+
+
 def list_characters() -> list[str]:
-    """assets/characters 配下の利用可能キャラID一覧。"""
-    if not ASSETS_ROOT.is_dir():
-        return []
-    return sorted(d.name for d in ASSETS_ROOT.iterdir() if d.is_dir())
+    """同梱 + ユーザー追加 のキャラID一覧。"""
+    ids = set()
+    for root in (ASSETS_ROOT, DATA_DIR / "characters"):
+        if root.is_dir():
+            ids.update(d.name for d in root.iterdir() if d.is_dir())
+    return sorted(ids)
 
 
-# ---- ペルソナ(アセット側に Markdown で配置) ------------------------
+# ---- ペルソナ(ユーザー編集=appdata 優先 / 既定=同梱 assets) ----------
 def persona_path(character_id: str) -> Path:
-    """キャラごとのペルソナ定義(アセットのキャラフォルダに Markdown)。"""
-    return character_dir(character_id) / "persona.md"
+    """保存先(ユーザー編集分)。"""
+    return user_character_dir(character_id) / "persona.md"
 
 
 def load_persona(character_id: str) -> str | None:
-    """assets/characters/<id>/persona.md があれば読む。互換で .txt も見る。"""
-    md = persona_path(character_id)
-    if md.exists():
-        return md.read_text(encoding="utf-8").strip() or None
-    legacy = SRC_CHARACTER_ROOT / character_id / "persona.txt"
-    if legacy.exists():
-        return legacy.read_text(encoding="utf-8").strip() or None
+    """ユーザー編集(appdata)→ 同梱 assets の順で読む。"""
+    for p in (persona_path(character_id), character_dir(character_id) / "persona.md"):
+        if p.exists():
+            text = p.read_text(encoding="utf-8").strip()
+            if text:
+                return text
     return None
 
 
@@ -137,19 +159,21 @@ def save_persona(character_id: str, text: str) -> None:
 
 # ---- 感情→立ち絵 の差し替えマップ(任意) ---------------------------
 def emotion_overrides_path(character_id: str) -> Path:
-    return character_dir(character_id) / "emotions.json"
+    return user_character_dir(character_id) / "emotions.json"
 
 
 def load_emotion_overrides(character_id: str) -> dict[str, str]:
-    """assets/characters/<id>/emotions.json: {emotion: filename or path}。"""
-    p = emotion_overrides_path(character_id)
-    if not p.exists():
-        return {}
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        return {}
+    """{emotion: filename or path}。ユーザー編集→同梱 の順で最初に見つかった方。"""
+    for p in (emotion_overrides_path(character_id),
+              character_dir(character_id) / "emotions.json"):
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return {str(k): str(v) for k, v in data.items()}
+            except (json.JSONDecodeError, OSError):
+                pass
+    return {}
 
 
 def save_emotion_overrides(character_id: str, mapping: dict[str, str]) -> None:
@@ -164,8 +188,16 @@ def emotion_path(character_id: str, emotion: str) -> Path:
     overrides = load_emotion_overrides(character_id)
     if emo in overrides:
         ov = Path(overrides[emo])
-        return ov if ov.is_absolute() else character_dir(character_id) / ov
-    return character_dir(character_id) / f"{emo}.png"
+        if ov.is_absolute():
+            return ov
+        # 相対指定: ユーザー編集ディレクトリ → 同梱 の順で探す
+        for base in (user_character_dir(character_id), character_dir(character_id)):
+            if (base / ov).exists():
+                return base / ov
+        return character_dir(character_id) / ov
+    # 既定: ユーザーが appdata に置いた同名pngを優先、無ければ同梱
+    user_png = user_character_dir(character_id) / f"{emo}.png"
+    return user_png if user_png.exists() else character_dir(character_id) / f"{emo}.png"
 
 
 def available_emotions(character_id: str) -> list[str]:

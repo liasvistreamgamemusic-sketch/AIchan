@@ -10,9 +10,10 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import DATA_DIR, REPO_ROOT
+from .config import APP_DIR, DATA_DIR
 
-CONFIG_FILE = REPO_ROOT / "config.yaml"
+# config.yaml はユーザーが編集するもの → exe と同じ場所(開発時はリポジトリ直下)。
+CONFIG_FILE = APP_DIR / "config.yaml"
 # pyyaml が無い環境でも設定を失わないための JSON フォールバック(ユーザーローカル)。
 CONFIG_JSON_FALLBACK = DATA_DIR / "config.json"
 
@@ -97,6 +98,14 @@ class DiscordConfig:
 
 
 @dataclass
+class UpdateConfig:
+    """自動アップデート(GitHub Releases を確認)。"""
+    auto_check: bool = True             # 起動時に新版を確認
+    auto_install: bool = False          # True: 自動でDL+適用 / False: 確認ダイアログ
+    repo: str = "liasvistreamgamemusic-sketch/AIchan"
+
+
+@dataclass
 class UserConfig:
     """ユーザー(あなた)の呼ばれ方。TTSは読み(かな)で発音矯正する。"""
     name: str = ""            # 表示名(漢字など)
@@ -151,6 +160,7 @@ class AppConfig:
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     character: CharacterConfig = field(default_factory=CharacterConfig)
     user: UserConfig = field(default_factory=UserConfig)
+    update: UpdateConfig = field(default_factory=UpdateConfig)
     theme: ThemeConfig = field(default_factory=ThemeConfig)
 
     @classmethod

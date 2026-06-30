@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -135,6 +136,7 @@ class CharacterWindow(QWidget):
     sigThinking = Signal(bool)
     sigSpeaking = Signal(bool)
     sigUserSaid = Signal(str, str)
+    sigUpdate = Signal(object, bool)   # (info|None, manual)
 
     def __init__(self, state: config.WindowState | None = None, controller=None,
                  name: str = "すみれ", app_cfg=None) -> None:
@@ -165,6 +167,7 @@ class CharacterWindow(QWidget):
         self.sigThinking.connect(self._on_thinking)
         self.sigSpeaking.connect(self._on_speaking)
         self.sigUserSaid.connect(self._on_user_said)
+        self.sigUpdate.connect(self._on_update)
 
     # ---- Orchestrator 連携 -------------------------------------------
     def make_hooks(self):
@@ -232,6 +235,48 @@ class CharacterWindow(QWidget):
             self.theme = self.app_cfg.theme
         dlg = SettingsDialog(self, self.app_cfg)
         dlg.exec()
+
+    # ---- 自動アップデート --------------------------------------------
+    def check_updates(self, manual: bool = False) -> None:
+        """GitHub Releases を別スレッドで確認(結果は sigUpdate へ)。"""
+        import threading
+        repo = self.app_cfg.update.repo if self.app_cfg else ""
+
+        def work() -> None:
+            from .. import updater
+            info = updater.check(repo) if repo else None
+            self.sigUpdate.emit(info, manual)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_update(self, info, manual: bool) -> None:
+        from .. import updater
+        if not info:
+            if manual:
+                QMessageBox.information(self, "アップデート", "最新版を使用しています。")
+            return
+        tag = info.get("tag", "")
+        auto = self.app_cfg and self.app_cfg.update.auto_install
+        if auto and updater.is_frozen() and info.get("asset_url"):
+            self.tray.showMessage("アップデート", f"{tag} を適用して再起動します",
+                                  QSystemTrayIcon.Information, 4000)
+            if updater.apply(info["asset_url"]):
+                QApplication.quit()
+            return
+        notes = (info.get("notes") or "")[:400]
+        ret = QMessageBox.question(
+            self, "アップデートがあります",
+            f"新しいバージョン {tag} があります。更新しますか?\n\n{notes}",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+        if updater.is_frozen() and info.get("asset_url"):
+            if updater.apply(info["asset_url"]):
+                QApplication.quit()
+        else:
+            import webbrowser
+            webbrowser.open(info.get("html_url") or "")
 
     # ---- セットアップ -------------------------------------------------
     def _init_window(self) -> None:
@@ -457,6 +502,9 @@ class CharacterWindow(QWidget):
         settings_act = QAction("設定…", self)
         settings_act.triggered.connect(self.open_settings)
         menu.addAction(settings_act)
+        upd_act = QAction("アップデートを確認", self)
+        upd_act.triggered.connect(lambda: self.check_updates(manual=True))
+        menu.addAction(upd_act)
         quit_act = QAction("終了", self)
         quit_act.triggered.connect(QApplication.quit)
         menu.addAction(quit_act)

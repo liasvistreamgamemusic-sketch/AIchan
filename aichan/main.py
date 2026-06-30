@@ -120,6 +120,10 @@ def main() -> int:
     window.show()
     _log_status(cfg, llm, tts, recognizer)
 
+    # 起動時の自動アップデート確認(設定で無効化可)
+    if cfg.update.auto_check:
+        QTimer.singleShot(3000, lambda: window.check_updates(manual=False))
+
     def shutdown() -> None:
         scheduler.stop()
         orch.stop()
