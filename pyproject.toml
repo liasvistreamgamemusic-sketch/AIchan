@@ -1,0 +1,35 @@
+[project]
+name = "aichan"
+version = "0.1.0"
+description = "デスクトップAIキャラクターコンパニオン (すみれ)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.6",
+    "PyYAML>=6.0",          # config.yaml の読み書き(本番では常に必要)
+]
+
+# 機能別の追加依存。必要なものだけ入れる(graceful degradation で未導入でも起動可)。
+[project.optional-dependencies]
+llm = ["openai>=1.0"]                                   # LMStudio (OpenAI互換)
+tts = ["requests", "sounddevice", "soundfile"]         # Irodori-TTS 接続 + 再生
+stt = ["faster-whisper", "sounddevice", "numpy", "webrtcvad"]  # 音声入力
+vision = ["mss", "pillow"]                             # 画面読み取り
+discord = ["discord.py>=2.3"]                          # Discord連携
+config = ["pyyaml"]                                    # config.yaml
+tools = ["pillow", "numpy"]                            # 背景除去 tools/remove_bg.py
+full = [
+    "openai>=1.0", "requests", "sounddevice", "soundfile",
+    "faster-whisper", "numpy", "webrtcvad", "mss", "pillow",
+    "discord.py>=2.3", "pyyaml",
+]
+
+[project.scripts]
+aichan = "aichan.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aichan"]

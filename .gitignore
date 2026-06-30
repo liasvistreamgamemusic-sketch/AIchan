@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# --- 仮想環境 / ビルド ---
+.venv/
+venv/
+env/
+build/
+dist/
+*.spec.bak
+
+# --- uv ---
+.uv/
+# uv.lock は再現性のためコミットする(無視しない)
+
+# --- アプリのローカル状態(DB・ウィンドウ位置・ログ・JSON設定フォールバック) ---
+# ※実体は %LOCALAPPDATA%/AIchan(Win)・~/.local/share/aichan(Linux)。
+#   念のためリポジトリ直下の data/ も無視。
+/data/
+
+# --- ユーザー設定(LAN・Discordトークン等の秘密を含みうる) ---
+/config.yaml
+
+# --- 立ち絵の green screen 原本(ビルド入力。配布には透過 assets/ を使う) ---
+/character/
+
+# --- 診断ツールの出力 ---
+/tts_test_out.*
+
+# --- エディタ / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

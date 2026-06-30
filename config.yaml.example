@@ -1,0 +1,73 @@
+# AIちゃん 設定ファイル。 config.yaml にコピーして編集する。
+# 全項目は任意。未記載は既定値(aichan/settings.py)。
+
+llm:
+  base_url: "http://localhost:1234/v1"   # LMStudio の OpenAI互換エンドポイント
+  api_key: "lm-studio"                    # LMStudioはダミーで可
+  model: "google/gemma-4-12b-qat"         # Vision対応モデル(会話+画面理解 兼用)。正確なIDは /v1/models で確認
+  temperature: 0.8
+  max_tokens: 1024
+  autostart: false                        # アプリ起動時に LMStudio サーバを自動起動するか
+  server_cmd: []                          # 例: ["lms","server","start"]（lms CLI 要インストール）
+
+tts:
+  enabled: true
+  base_url: "http://127.0.0.1:8088/v1"    # Irodori-TTS-Server
+  voice: "sumire"                          # 登録ボイスID(/v1/audio/voices で作成)
+  speed: 1.0
+  autostart_server: true                   # アプリ起動時にTTSサーバを自動起動(推奨)
+  server_cmd: ["uv","run","python","-m","irodori_openai_tts","--port","8088"]  # 環境に合わせて
+
+stt:
+  enabled: true
+  backend: "faster-whisper"                # faster-whisper | whispercpp
+  model: "small"
+  device: "auto"
+  language: "ja"
+  mode: "ptt"                             # ptt(キー押下中録音) | vad(常時)
+
+screen:
+  enabled: false                           # 画面読み取り(プライバシー: 既定オフ)
+  interval_min_sec: 300
+  interval_max_sec: 900
+  exclude_titles: ["password", "銀行", "private"]
+
+proactive:
+  enabled: true                            # たまに話しかける
+  interval_min_sec: 600
+  interval_max_sec: 1800
+  quiet_start_hour: 23
+  quiet_end_hour: 8
+
+memory:
+  short_window_turns: 12
+  rag_top_k: 4
+  summarize_after_turns: 40
+
+discord:
+  enabled: false
+  token: ""
+  channel_ids: []
+
+character:
+  id: "sumire"
+  name: "すみれ"
+  # ペルソナは assets/characters/<id>/persona.md で管理(設定画面から編集可)。
+
+user:                                     # すみれがあなたをどう呼ぶか
+  name: ""                                # 表示名(漢字など)。空なら「あなた」
+  name_reading: ""                        # 読み(かな)。TTSの発音矯正に使う
+  honorific: "さん"                       # さん/ちゃん/くん/様/空=呼び捨て
+
+theme:                                    # 吹き出し・状態表示のテーマカラー
+  bubble_bg: "#fff2f8"
+  bubble_bg2: "#ffffff"
+  bubble_border: "#f6a8cb"
+  bubble_text: "#3a3340"
+  name_color: "#e36fa0"
+  status_bg: "#7a6e96"
+  status_text: "#ffffff"
+  accent: "#e36fa0"
+
+# 設定は右クリック→「設定…」のGUIからも変更できる(保存に pyyaml が必要)。
+# ペルソナ → persona.md / 立ち絵差し替え → emotions.json / その他 → この config.yaml。
