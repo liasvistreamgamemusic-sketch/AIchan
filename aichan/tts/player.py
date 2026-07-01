@@ -26,13 +26,15 @@ class AudioPlayer:
     def available(self) -> bool:
         return self._sd is not None or _has_winsound()
 
-    def play(self, audio: bytes) -> None:
-        """音声バイト列を再生(完了までブロック)。"""
+    def play(self, audio: bytes, volume: float = 1.0) -> None:
+        """音声バイト列を再生(完了までブロック)。volume は倍率(1.0=そのまま)。"""
         if not audio:
             return
         if self._sd is not None and self._sf is not None:
             try:
                 data, sr = self._sf.read(io.BytesIO(audio), dtype="float32")
+                if volume != 1.0:
+                    data = data * max(0.0, volume)
                 self._sd.play(data, sr)
                 self._sd.wait()
                 return

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 
+from ..gpu_lock import GPU_LOCK
 from ..settings import TTSConfig
 
 log = logging.getLogger(__name__)
@@ -52,12 +53,13 @@ class IrodoriTTS:
             payload["irodori"] = irodori
 
         try:
-            r = requests.post(
-                self.cfg.base_url.rstrip("/") + "/audio/speech",
-                json=payload,
-                headers={"Authorization": f"Bearer {self.cfg.api_key}"},
-                timeout=60,
-            )
+            with GPU_LOCK:  # LLM(Vulkan)と同時にGPUを叩かないよう直列化
+                r = requests.post(
+                    self.cfg.base_url.rstrip("/") + "/audio/speech",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self.cfg.api_key}"},
+                    timeout=60,
+                )
             if not r.ok:
                 log.warning("TTS合成失敗 HTTP %s: %s", r.status_code, r.text[:200])
                 return None

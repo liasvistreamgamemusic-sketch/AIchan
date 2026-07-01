@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import logging
 
+from ..gpu_lock import GPU_LOCK
 from ..settings import LLMConfig
 
 log = logging.getLogger(__name__)
@@ -50,12 +51,13 @@ class LLMClient:
         if image_png is not None:
             msgs = _attach_image(msgs, image_png)
         try:
-            resp = self._client.chat.completions.create(
-                model=self.cfg.model,
-                messages=msgs,
-                temperature=self.cfg.temperature,
-                max_tokens=self.cfg.max_tokens,
-            )
+            with GPU_LOCK:  # TTS(ROCm)と同時にGPUを叩かないよう直列化
+                resp = self._client.chat.completions.create(
+                    model=self.cfg.model,
+                    messages=msgs,
+                    temperature=self.cfg.temperature,
+                    max_tokens=self.cfg.max_tokens,
+                )
             return resp.choices[0].message.content or ""
         except Exception as e:  # 接続不可・モデル無し等 → フォールバック
             log.warning("LLM呼び出し失敗(%s)→ MockLLM応答", e)

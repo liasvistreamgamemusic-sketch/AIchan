@@ -92,7 +92,7 @@ class TTSManager:
                 if audio:
                     if on_start:
                         on_start()
-                    self.player.play(audio)
+                    self.player.play(audio, volume=self.cfg.volume)
             except Exception as e:
                 log.warning("TTS再生エラー: %s", e)
             finally:

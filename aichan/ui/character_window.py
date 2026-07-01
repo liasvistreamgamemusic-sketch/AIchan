@@ -77,6 +77,9 @@ class SpeechBubble(QFrame):
 
     def set_text(self, text: str) -> None:
         self.text_label.setText(text)
+        # setText() の updateGeometry() は次イベントループまで遅延されるため、
+        # 外側(CharacterWindow._reanchor)がサイズを読む前に確定させておく。
+        self.adjustSize()
 
 
 class MicButton(QPushButton):
@@ -159,6 +162,7 @@ class CharacterWindow(QWidget):
         self._bubble_timer.timeout.connect(self._hide_bubble)
         self._mouth_timer = QTimer(self); self._mouth_timer.timeout.connect(self._mouth_tick)
         self._mouth_phase = 0
+        self._speaking_now = False
 
         self._init_window()
         self._init_layout()
@@ -197,9 +201,17 @@ class CharacterWindow(QWidget):
         if speaking:
             self._mouth_phase = 0
             self._mouth_timer.start(110)
+            # 実際の再生が始まったので、長さ推定タイマーより実再生時間を優先する
+            self._speaking_now = True
+            self._bubble_timer.stop()
         else:
             self._mouth_timer.stop()
             self._apply_offset(0)
+            # 実際に再生していた場合のみ、読み終わりを起点に少し余裕を持って消す
+            # (TTS無効時などは say() が始めた長さ推定タイマーをそのまま使う)
+            if self._speaking_now:
+                self._speaking_now = False
+                self._bubble_timer.start(1500)
 
     def _on_user_said(self, text: str, source: str) -> None:
         self._set_status(f"きいてるよ: {text[:18]}")
@@ -486,12 +498,23 @@ class CharacterWindow(QWidget):
         if self._anchor_bottom is None or self._anchor_cx is None:
             self.resize(hint)
         else:
-            self.setGeometry(
+            x, y = self._clamp_to_screen(
                 self._anchor_cx - hint.width() // 2,
                 self._anchor_bottom - hint.height(),
                 hint.width(), hint.height(),
             )
+            self.setGeometry(x, y, hint.width(), hint.height())
         self._position_overlays()
+
+    def _clamp_to_screen(self, x: int, y: int, w: int, h: int) -> tuple[int, int]:
+        """吹き出しで幅/高さが増えても、枠が画面外へ出ないよう位置を収める。"""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if not screen:
+            return x, y
+        geo = screen.availableGeometry()
+        x = max(geo.left(), min(x, geo.right() - w + 1))
+        y = max(geo.top(), min(y, geo.bottom() - h + 1))
+        return x, y
 
     def _position_overlays(self) -> None:
         """操作オーバーレイ(入力欄+マイク)を立ち絵の下部内側に重ねる。"""

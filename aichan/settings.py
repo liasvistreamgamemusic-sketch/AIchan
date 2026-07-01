@@ -23,9 +23,9 @@ class LLMConfig:
     base_url: str = "http://192.168.0.86:1234/v1"   # LMStudio OpenAI互換
     api_key: str = "lm-studio"                    # ダミーで可
     #model: str = "google/gemma-4-12b-qat"         # Vision兼用(正確なIDは /v1/models で確認)
-    model: str = "google/gemma-4-e4b"        
+    model: str = "google/gemma-4-e2b"
     temperature: float = 0.8
-    max_tokens: int = 1024            # 短いと回答途中で切れる(JSON込みで余裕を持たせる)
+    max_tokens: int = 512           # 短いと回答途中で切れる(JSON込みで余裕を持たせる)
     request_timeout: float = 120.0
     autostart: bool = False           # LMStudioサーバをアプリ起動時に自動起動するか
     server_cmd: list[str] = field(default_factory=list)  # 例: ["lms","server","start"]
@@ -40,6 +40,7 @@ class TTSConfig:
     model: str = "irodori-tts"
     voice: str = "sumire"                          # 登録ボイスID
     speed: float = 1.0
+    volume: float = 1.0                            # 再生音量(0.0-1.5、1.0=そのまま)
     cfg_scale_text: float = 1.0
     cfg_scale_speaker: float = 1.0
     response_format: str = "wav"

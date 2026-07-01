@@ -204,6 +204,9 @@ class SettingsDialog(QDialog):
         w = QWidget()
         form = QFormLayout(w)
         self.ck_tts = QCheckBox(); self.ck_tts.setChecked(self.cfg.tts.enabled)
+        self.sp_volume = QDoubleSpinBox(); self.sp_volume.setRange(0.0, 2.0)
+        self.sp_volume.setSingleStep(0.1)
+        self.sp_volume.setValue(self.cfg.tts.volume)
         self.ck_stt = QCheckBox(); self.ck_stt.setChecked(self.cfg.stt.enabled)
         self.ck_screen = QCheckBox(); self.ck_screen.setChecked(self.cfg.screen.enabled)
         self.ck_proactive = QCheckBox(); self.ck_proactive.setChecked(self.cfg.proactive.enabled)
@@ -217,6 +220,7 @@ class SettingsDialog(QDialog):
         self.sp_sum = QSpinBox(); self.sp_sum.setRange(10, 500)
         self.sp_sum.setValue(self.cfg.memory.summarize_after_turns)
         form.addRow("音声で話す(TTS)", self.ck_tts)
+        form.addRow("音量", self.sp_volume)
         form.addRow("音声を聞く(STT)", self.ck_stt)
         form.addRow("画面読み取り", self.ck_screen)
         form.addRow("自発発話", self.ck_proactive)
@@ -291,6 +295,7 @@ class SettingsDialog(QDialog):
 
         # 機能
         c.tts.enabled = self.ck_tts.isChecked()
+        c.tts.volume = self.sp_volume.value()
         c.stt.enabled = self.ck_stt.isChecked()
         c.screen.enabled = self.ck_screen.isChecked()
         c.proactive.enabled = self.ck_proactive.isChecked()
