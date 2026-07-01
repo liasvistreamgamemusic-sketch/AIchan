@@ -9,9 +9,13 @@ llm:
   max_tokens: 1024
   # LMStudioは常駐GUIアプリ。手動で起動しモデルをロードしておくのが安定(推奨)。
   # 自動起動したい時のみ autostart:true + server_cmd(同一PCのみ)。停止はしない(勝手に止めない)。
+  # ★重要: server_cmd は3要素。3つ目に「コマンド全体を1つの文字列」で書く(&&を含めて)。
+  #   正: - cmd / - /c / - lms server start && lms load google/gemma-4-e4b
+  #   誤: cmd, /c, lms, server, start, '&&', lms, load, ...(バラすと壊れる)
+  # 事前に一度 `lms bootstrap` を実行して lms をPATHに通し、Windowsを再ログインすること。
   autostart: false
-  server_cmd: []                          # 例: ["cmd","/c","lms server start && lms load <model>"]
-  stop_cmd: []                            # 終了時に止めたい時のみ 例: ["cmd","/c","lms server stop"]
+  server_cmd: []                          # 例: ["cmd", "/c", "lms server start && lms load google/gemma-4-e4b"]
+  stop_cmd: []                            # 終了時に止めたい時のみ 例: ["cmd", "/c", "lms server stop"]
 
 tts:
   enabled: true

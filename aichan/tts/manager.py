@@ -30,6 +30,7 @@ class TTSManager:
         self._q: "queue.Queue[tuple]" = queue.Queue()
         self._thread: threading.Thread | None = None
         self._running = False
+        self.on_ready = None   # 準備完了通知(warmup後 / 無効時)
 
     def start(self) -> None:
         if not self.cfg.enabled:
@@ -46,15 +47,18 @@ class TTSManager:
         初回発話の待ち(モデルロード + MIOpenカーネル最適化)を、起動直後に
         裏で済ませることで、ユーザーの最初の発話を速くする。
         """
-        self.server.start()          # 自動起動時は health まで待つ
-        if not self.backend.health():
-            return                    # サーバが無ければウォームアップ不要
         try:
+            self.server.start()          # 自動起動時は health まで待つ
+            if not self.backend.health():
+                return                    # サーバが無ければウォームアップ不要
             log.info("TTS ウォームアップ中(初回の遅延を先に解消)…")
             self.backend.synth("こんにちは。", speed=self.cfg.speed)
             log.info("TTS ウォームアップ完了")
         except Exception as e:
             log.info("TTS ウォームアップ skip: %s", e)
+        finally:
+            if self.on_ready:
+                self.on_ready()          # 準備完了(成否に関わらず待ちを解除)
 
     def stop(self) -> None:
         self._running = False

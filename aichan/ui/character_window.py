@@ -138,6 +138,7 @@ class CharacterWindow(QWidget):
     sigUserSaid = Signal(str, str)
     sigUpdate = Signal(object, bool)   # (info|None, manual)
     sigUpdateDone = Signal(bool)       # 更新適用の結果
+    sigPrepare = Signal(str, bool)     # (component, ready) 起動準備状況
 
     def __init__(self, state: config.WindowState | None = None, controller=None,
                  name: str = "すみれ", app_cfg=None) -> None:
@@ -172,6 +173,8 @@ class CharacterWindow(QWidget):
         self.sigUserSaid.connect(self._on_user_said)
         self.sigUpdate.connect(self._on_update)
         self.sigUpdateDone.connect(self._on_update_done)
+        self._pending: set[str] = set()
+        self.sigPrepare.connect(self._on_prepare)
 
     # ---- Orchestrator 連携 -------------------------------------------
     def make_hooks(self):
@@ -239,6 +242,30 @@ class CharacterWindow(QWidget):
             self.theme = self.app_cfg.theme
         dlg = SettingsDialog(self, self.app_cfg)
         dlg.exec()
+
+    # ---- 起動準備状況(準備中… / 準備完了) --------------------------
+    def prepare(self, component: str) -> None:
+        """このコンポーネントの準備を開始(別スレッドからでも可)。"""
+        self.sigPrepare.emit(component, False)
+
+    def mark_ready(self, component: str) -> None:
+        """このコンポーネントの準備完了(別スレッドからでも可)。"""
+        self.sigPrepare.emit(component, True)
+
+    def _on_prepare(self, component: str, ready: bool) -> None:
+        if ready:
+            self._pending.discard(component)
+        else:
+            self._pending.add(component)
+        if self._pending:
+            self._set_status("準備中… " + "・".join(sorted(self._pending)))
+        else:
+            self._set_status("準備完了。話しかけてね")
+            QTimer.singleShot(4000, self._clear_ready_status)
+
+    def _clear_ready_status(self) -> None:
+        if not self._pending and self.status.text() == "準備完了。話しかけてね":
+            self._set_status("")
 
     # ---- 起動の続行(更新しない場合にサービスを起動) -----------------
     def begin_running(self) -> None:

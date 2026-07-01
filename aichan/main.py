@@ -159,15 +159,27 @@ def main() -> int:
     # (先に更新確認 → 更新するなら、サーバ起動/終了の無駄を避けて即入れ替え)
     def start_services() -> None:
         _log_status(cfg, llm, tts, recognizer)
-        tts.start()                 # サーバ自動起動は内部で別スレッド
+        # 準備状況の表示(いつ話せるか分かるように)
+        if cfg.tts.enabled:
+            window.prepare("音声")
+            tts.on_ready = lambda: window.mark_ready("音声")
+        window.prepare("LLM")
+
+        tts.start()                 # サーバ自動起動 + ウォームアップは内部で別スレッド
         orch.start()
         scheduler.start()
         if discord_bot:
             discord_bot.start()
         if mic is not None and cfg.stt.mode == "vad":
             mic.start_vad()
-        if llm_proc is not None:     # health待ちが長いので別スレッドで
-            threading.Thread(target=llm_proc.start, daemon=True).start()
+
+        # LLM: 自動起動 → 接続できるまで待って準備完了に(最大~40秒)
+        def bring_up_llm() -> None:
+            if llm_proc is not None:
+                llm_proc.start()     # health待ち
+            _wait_llm_ready(cfg)
+            window.mark_ready("LLM")
+        threading.Thread(target=bring_up_llm, daemon=True).start()
 
     window.on_stay_running = start_services
     if cfg.update.auto_check:
@@ -199,6 +211,24 @@ def _raise_window(window: CharacterWindow) -> None:
     window.showNormal()
     window.raise_()
     window.activateWindow()
+
+
+def _wait_llm_ready(cfg: AppConfig, timeout: float = 40.0) -> bool:
+    """LLM(LMStudio)に接続できるまで待つ。準備状況表示のため。"""
+    import time
+    import urllib.request
+    url = cfg.llm.base_url.rstrip("/") + "/models"
+    deadline = timeout
+    while deadline > 0:
+        try:
+            with urllib.request.urlopen(url, timeout=3) as r:
+                if r.status < 500:
+                    return True
+        except Exception:
+            pass
+        time.sleep(2.0)
+        deadline -= 2.0
+    return False
 
 
 def _log_status(cfg: AppConfig, llm: LLMClient, tts: TTSManager, rec) -> None:

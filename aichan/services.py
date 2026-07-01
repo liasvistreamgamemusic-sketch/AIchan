@@ -26,6 +26,7 @@ class ManagedProcess:
         self.stop_cmd = stop_cmd or []
         self.proc: subprocess.Popen | None = None
         self._started = False   # 自分で起動した時だけ停止する
+        self._logf = None
 
     def _ready(self) -> bool:
         if not self.ready_url:
@@ -44,7 +45,15 @@ class ManagedProcess:
             return True
         log.info("%s を自動起動: %s", self.name, " ".join(self.cmd))
         try:
-            self.proc = subprocess.Popen(self.cmd, creationflags=_NO_WINDOW)
+            # 起動コマンドの出力(lms not found 等のエラー)をログに残す
+            from .config import DATA_DIR
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            self._logf = open(DATA_DIR / f"{self.name.lower()}_autostart.log",
+                              "w", encoding="utf-8", errors="replace")
+            self.proc = subprocess.Popen(
+                self.cmd, stdout=self._logf, stderr=subprocess.STDOUT,
+                creationflags=_NO_WINDOW,
+            )
             self._started = True
         except Exception as e:
             log.warning("%s の起動に失敗: %s", self.name, e)
@@ -74,3 +83,9 @@ class ManagedProcess:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
         self.proc = None
+        if self._logf:
+            try:
+                self._logf.close()
+            except Exception:
+                pass
+            self._logf = None
