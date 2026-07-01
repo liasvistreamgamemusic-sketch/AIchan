@@ -7,8 +7,11 @@ llm:
   model: "google/gemma-4-12b-qat"         # Vision対応モデル(会話+画面理解 兼用)。正確なIDは /v1/models で確認
   temperature: 0.8
   max_tokens: 1024
-  autostart: false                        # アプリ起動時に LMStudio サーバを自動起動するか
-  server_cmd: []                          # 例: ["lms","server","start"]（lms CLI 要インストール）
+  # LMStudioは常駐GUIアプリ。手動で起動しモデルをロードしておくのが安定(推奨)。
+  # 自動起動したい時のみ autostart:true + server_cmd(同一PCのみ)。停止はしない(勝手に止めない)。
+  autostart: false
+  server_cmd: []                          # 例: ["cmd","/c","lms server start && lms load <model>"]
+  stop_cmd: []                            # 終了時に止めたい時のみ 例: ["cmd","/c","lms server stop"]
 
 tts:
   enabled: true

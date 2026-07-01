@@ -137,6 +137,7 @@ class CharacterWindow(QWidget):
     sigSpeaking = Signal(bool)
     sigUserSaid = Signal(str, str)
     sigUpdate = Signal(object, bool)   # (info|None, manual)
+    sigUpdateDone = Signal(bool)       # 更新適用の結果
 
     def __init__(self, state: config.WindowState | None = None, controller=None,
                  name: str = "すみれ", app_cfg=None) -> None:
@@ -168,6 +169,7 @@ class CharacterWindow(QWidget):
         self.sigSpeaking.connect(self._on_speaking)
         self.sigUserSaid.connect(self._on_user_said)
         self.sigUpdate.connect(self._on_update)
+        self.sigUpdateDone.connect(self._on_update_done)
 
     # ---- Orchestrator 連携 -------------------------------------------
     def make_hooks(self):
@@ -256,12 +258,12 @@ class CharacterWindow(QWidget):
                 QMessageBox.information(self, "アップデート", "最新版を使用しています。")
             return
         tag = info.get("tag", "")
+        can_apply = updater.is_frozen() and bool(info.get("asset_url"))
         auto = self.app_cfg and self.app_cfg.update.auto_install
-        if auto and updater.is_frozen() and info.get("asset_url"):
-            self.tray.showMessage("アップデート", f"{tag} を適用して再起動します",
+        if auto and can_apply:
+            self.tray.showMessage("アップデート", f"{tag} をダウンロードして適用します",
                                   QSystemTrayIcon.Information, 4000)
-            if updater.apply(info["asset_url"]):
-                QApplication.quit()
+            self._begin_update(info)
             return
         notes = (info.get("notes") or "")[:400]
         ret = QMessageBox.question(
@@ -271,12 +273,37 @@ class CharacterWindow(QWidget):
         )
         if ret != QMessageBox.Yes:
             return
-        if updater.is_frozen() and info.get("asset_url"):
-            if updater.apply(info["asset_url"]):
-                QApplication.quit()
+        if can_apply:
+            self._begin_update(info)
         else:
             import webbrowser
             webbrowser.open(info.get("html_url") or "")
+
+    def _begin_update(self, info) -> None:
+        """更新のDL+適用を別スレッドで(UIを固めない)。完了で終了 or 失敗表示。"""
+        import threading
+        self._set_status("更新をダウンロード中…そのままお待ちください")
+
+        def work() -> None:
+            ok = False
+            try:
+                from .. import updater
+                ok = updater.apply(info.get("asset_url", ""))
+            finally:
+                self.sigUpdateDone.emit(bool(ok))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_update_done(self, ok: bool) -> None:
+        if ok:
+            QApplication.quit()   # 入れ替えバッチが終了を待って再起動する
+        else:
+            self._set_status("")
+            QMessageBox.warning(
+                self, "アップデート",
+                "更新の適用に失敗しました。リリースページから手動で更新してください。\n"
+                "(詳細ログ: data フォルダの update.log)",
+            )
 
     # ---- セットアップ -------------------------------------------------
     def _init_window(self) -> None:

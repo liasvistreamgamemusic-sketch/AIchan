@@ -77,8 +77,10 @@ def apply(asset_url: str) -> bool:
         log.info("開発実行のため自動適用はスキップ(リリースページからどうぞ)")
         return False
     if not asset_url:
+        _ulog("asset_url が空。Windows用zipアセットが見つからない")
         return False
     try:
+        _ulog(f"apply start: {asset_url}")
         staging = Path(tempfile.mkdtemp(prefix="aichan_update_"))
         zip_path = staging / "update.zip"
         log.info("更新をダウンロード: %s", asset_url)
@@ -93,32 +95,63 @@ def apply(asset_url: str) -> bool:
         entries = [p for p in extract_dir.iterdir()]
         if not any(p.name.lower() == "aichan.exe" for p in entries) and len(entries) == 1 and entries[0].is_dir():
             src = entries[0]
+        _ulog(f"extracted to {src}; install={APP_DIR}")
         return _spawn_swapper(src, APP_DIR)
     except Exception as e:
         log.warning("更新の適用に失敗: %s", e)
+        _ulog(f"apply ERROR: {e}")
         return False
 
 
+def _ulog(msg: str) -> None:
+    """更新の進捗を data ディレクトリのログへ(トラブル診断用)。"""
+    try:
+        from .config import DATA_DIR
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(DATA_DIR / "update.log", "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+
 def _spawn_swapper(src: Path, install: Path) -> bool:
-    """アプリ終了を待ってファイルを入れ替え、再起動するバッチを起動。"""
+    """アプリ終了を待ってファイルを入れ替え、再起動するバッチを起動。
+
+    残ったAIchan.exeがあると入れ替えできないため、一定時間で強制終了する。
+    進捗は %TEMP%\\aichan_update.log に残す。
+    """
     exe = install / "AIchan.exe"
     bat = Path(tempfile.gettempdir()) / "aichan_update.bat"
     script = f"""@echo off
 chcp 65001 >nul
-echo 更新を準備しています...
+set "LOG=%TEMP%\\aichan_update.log"
+echo [update] start > "%LOG%"
+set /a n=0
 :waitloop
 tasklist /fi "imagename eq AIchan.exe" 2>nul | find /i "AIchan.exe" >nul
 if not errorlevel 1 (
+  set /a n+=1
+  if %n% GEQ 20 (
+    echo [update] forcing taskkill of leftover AIchan.exe >> "%LOG%"
+    taskkill /f /im AIchan.exe >> "%LOG%" 2>&1
+    timeout /t 2 /nobreak >nul
+    goto docopy
+  )
   timeout /t 1 /nobreak >nul
   goto waitloop
 )
-robocopy "{src}" "{install}" /E /IS /IT /NFL /NDL /NJH /NJS >nul
+:docopy
+echo [update] copying files >> "%LOG%"
+robocopy "{src}" "{install}" /E /IS /IT /R:2 /W:1 /NFL /NDL /NJH /NJS >> "%LOG%" 2>&1
+echo [update] robocopy exit %errorlevel% >> "%LOG%"
+echo [update] restarting >> "%LOG%"
 start "" "{exe}"
+echo [update] done >> "%LOG%"
 rmdir /s /q "{src.parent}" 2>nul
 del "%~f0"
 """
     bat.write_text(script, encoding="utf-8")
-    log.info("更新スクリプトを起動して再起動します")
+    log.info("更新スクリプトを起動して再起動します(ログ: %%TEMP%%\\aichan_update.log)")
     flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
              | getattr(subprocess, "CREATE_NO_WINDOW", 0))
     subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags)

@@ -123,17 +123,15 @@ def main() -> int:
         from .discord_bot.bot import DiscordBot
         discord_bot = DiscordBot(cfg.discord, orch)
 
-    # LMStudio 自動起動(任意)。停止コマンドも用意(未指定なら lms を自動推定)。
+    # LMStudio 自動起動(任意)。停止は明示 stop_cmd を設定した時だけ(勝手に止めない)。
+    # LMStudioは常駐GUIアプリなので、基本は手動起動 + autostart:false を推奨。
     llm_proc = None
     if cfg.llm.autostart and cfg.llm.server_cmd:
         from .services import ManagedProcess
-        llm_stop = list(cfg.llm.stop_cmd)
-        if not llm_stop and "lms" in " ".join(cfg.llm.server_cmd):
-            llm_stop = ["cmd", "/c", "lms server stop"]
         llm_proc = ManagedProcess(
             cfg.llm.server_cmd,
             ready_url=cfg.llm.base_url.rstrip("/") + "/models",
-            name="LMStudio", stop_cmd=llm_stop,
+            name="LMStudio", stop_cmd=list(cfg.llm.stop_cmd),
         )
 
     # --- 先にウィンドウ表示(サーバ起動を待たせない) ---
