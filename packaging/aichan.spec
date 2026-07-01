@@ -17,7 +17,8 @@ datas = [
 ]
 
 hiddenimports = []
-for mod in ("faster_whisper", "ctranslate2", "sounddevice", "soundfile", "mss"):
+# aichan 内は遅延importが多い(settings_dialog / updater / discord_bot 等)ため全部集める
+for mod in ("aichan", "faster_whisper", "ctranslate2", "sounddevice", "soundfile", "mss"):
     try:
         hiddenimports += collect_submodules(mod)
     except Exception:
@@ -31,7 +32,7 @@ for mod in ("ctranslate2", "sounddevice", "soundfile"):
         pass
 
 a = Analysis(
-    [str(root / "aichan" / "main.py")],
+    [str(root / "packaging" / "launcher.py")],   # 相対import対策: パッケージとして起動
     pathex=[str(root)],
     binaries=binaries,
     datas=datas,
