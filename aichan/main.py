@@ -57,11 +57,28 @@ def _acquire_single_instance() -> QLocalServer | None:
     return server
 
 
+def _setup_logging() -> None:
+    """コンソール + ファイル(data/aichan.log)へログ。exeでも原因を追えるように。"""
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    try:
+        from logging.handlers import RotatingFileHandler
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        fh = RotatingFileHandler(
+            config.DATA_DIR / "aichan.log", maxBytes=1_000_000,
+            backupCount=2, encoding="utf-8",
+        )
+        handlers.append(fh)
+    except Exception:
+        pass
+    logging.basicConfig(level=logging.INFO, format=fmt, handlers=handlers)
+
+
 def main() -> int:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    _setup_logging()
     cfg = AppConfig.load()
+    log.info("AIちゃん 起動 (frozen=%s, data=%s)",
+             getattr(sys, "frozen", False), config.DATA_DIR)
 
     app = QApplication(sys.argv)
     app.setApplicationName("AIちゃん")

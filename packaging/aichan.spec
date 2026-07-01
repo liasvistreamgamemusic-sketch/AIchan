@@ -7,7 +7,7 @@
 # まずは uv ランチャー(run.bat)での配布を推奨。exe はその次のステップ。
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_submodules, collect_all
 
 root = Path(SPECPATH).parent
 
@@ -15,19 +15,18 @@ datas = [
     (str(root / "assets"), "assets"),       # 立ち絵・persona.md・emotions.json
     (str(root / "config.yaml.example"), "."),
 ]
-
-hiddenimports = []
-# aichan 内は遅延importが多い(settings_dialog / updater / discord_bot 等)ため全部集める
-for mod in ("aichan", "faster_whisper", "ctranslate2", "sounddevice", "soundfile", "mss"):
-    try:
-        hiddenimports += collect_submodules(mod)
-    except Exception:
-        pass
-
 binaries = []
-for mod in ("ctranslate2", "sounddevice", "soundfile"):
+hiddenimports = collect_submodules("aichan")  # 遅延import(settings_dialog/updater等)対策
+
+# STT/音声などネイティブ依存はまるごと収集(datas+binaries+hiddenimports)。
+# 特に faster-whisper は ctranslate2 / onnxruntime(VAD) / av / tokenizers が要る。
+for mod in ("faster_whisper", "ctranslate2", "onnxruntime", "av",
+            "tokenizers", "sounddevice", "soundfile", "webrtcvad", "mss"):
     try:
-        binaries += collect_dynamic_libs(mod)
+        d, b, h = collect_all(mod)
+        datas += d
+        binaries += b
+        hiddenimports += h
     except Exception:
         pass
 

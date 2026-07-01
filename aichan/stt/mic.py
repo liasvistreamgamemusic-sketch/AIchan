@@ -73,7 +73,10 @@ class MicListener:
             self._frames.append(indata[:, 0].copy())
 
     def _recognize(self, audio: np.ndarray) -> None:
+        dur = len(audio) / self.cfg.samplerate if audio.size else 0.0
+        log.info("録音 %.1f秒 を文字起こし中…", dur)
         text = self.rec.transcribe(audio, self.cfg.samplerate)
+        log.info("文字起こし結果: %r", text)
         if text:
             self.on_text(text)
 
