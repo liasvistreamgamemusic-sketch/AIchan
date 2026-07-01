@@ -11,6 +11,9 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
+# Windowsで子プロセス(cmd/lms等)のコンソール窓を出さない
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 class ManagedProcess:
     """コマンドで起動し、ready_url が応答するまで待ち、終了時に停止する。"""
@@ -41,7 +44,7 @@ class ManagedProcess:
             return True
         log.info("%s を自動起動: %s", self.name, " ".join(self.cmd))
         try:
-            self.proc = subprocess.Popen(self.cmd)
+            self.proc = subprocess.Popen(self.cmd, creationflags=_NO_WINDOW)
             self._started = True
         except Exception as e:
             log.warning("%s の起動に失敗: %s", self.name, e)
@@ -61,7 +64,7 @@ class ManagedProcess:
         if self._started and self.stop_cmd:
             log.info("%s 停止コマンド: %s", self.name, " ".join(self.stop_cmd))
             try:
-                subprocess.run(self.stop_cmd, timeout=15)
+                subprocess.run(self.stop_cmd, timeout=15, creationflags=_NO_WINDOW)
             except Exception as e:
                 log.warning("%s 停止コマンド失敗: %s", self.name, e)
         if self.proc and self.proc.poll() is None:

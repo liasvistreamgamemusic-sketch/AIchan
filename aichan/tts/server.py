@@ -13,6 +13,9 @@ from .irodori import IrodoriTTS
 
 log = logging.getLogger(__name__)
 
+# Windowsで子プロセス(wsl/cmd)のコンソール窓を出さない
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 class TTSServerProcess:
     def __init__(self, cfg: TTSConfig) -> None:
@@ -29,7 +32,7 @@ class TTSServerProcess:
             return True
         log.info("TTSサーバ起動: %s", " ".join(self.cfg.server_cmd))
         try:
-            self.proc = subprocess.Popen(self.cfg.server_cmd)
+            self.proc = subprocess.Popen(self.cfg.server_cmd, creationflags=_NO_WINDOW)
             self._started = True
         except Exception as e:
             log.warning("TTSサーバ起動失敗: %s", e)
@@ -57,7 +60,7 @@ class TTSServerProcess:
         if cmd:
             log.info("TTSサーバ停止コマンド: %s", " ".join(cmd))
             try:
-                subprocess.run(cmd, timeout=15)
+                subprocess.run(cmd, timeout=15, creationflags=_NO_WINDOW)
             except Exception as e:
                 log.warning("TTS停止コマンド失敗: %s", e)
         if self.proc and self.proc.poll() is None:

@@ -119,6 +119,7 @@ del "%~f0"
 """
     bat.write_text(script, encoding="utf-8")
     log.info("更新スクリプトを起動して再起動します")
-    subprocess.Popen(["cmd", "/c", str(bat)],
-                     creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+    flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+             | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags)
     return True
