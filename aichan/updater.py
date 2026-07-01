@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,8 +86,9 @@ def apply(asset_url: str) -> bool:
         zip_path = staging / "update.zip"
         log.info("更新をダウンロード: %s", asset_url)
         req = urllib.request.Request(asset_url, headers=UA)
-        with urllib.request.urlopen(req, timeout=60) as r, open(zip_path, "wb") as f:
-            f.write(r.read())
+        with urllib.request.urlopen(req, timeout=30) as r, open(zip_path, "wb") as f:
+            shutil.copyfileobj(r, f)   # 大きいので逐次書き込み
+        _ulog(f"downloaded {zip_path.stat().st_size} bytes")
         extract_dir = staging / "new"
         with zipfile.ZipFile(zip_path) as z:
             z.extractall(extract_dir)
@@ -117,33 +119,39 @@ def _ulog(msg: str) -> None:
 def _spawn_swapper(src: Path, install: Path) -> bool:
     """アプリ終了を待ってファイルを入れ替え、再起動するバッチを起動。
 
-    残ったAIchan.exeがあると入れ替えできないため、一定時間で強制終了する。
-    進捗は %TEMP%\\aichan_update.log に残す。
+    - 遅延は timeout ではなく ping(コンソール無し環境でも確実に効く)
+    - 遅延展開(!n!)でカウンタを正しく扱い、残プロセスは強制終了
+    - 進捗は %TEMP%\\aichan_update.log に記録
     """
     exe = install / "AIchan.exe"
     bat = Path(tempfile.gettempdir()) / "aichan_update.bat"
     script = f"""@echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
 set "LOG=%TEMP%\\aichan_update.log"
-echo [update] start > "%LOG%"
+echo [update] start %date% %time% > "%LOG%"
+echo [update] src="{src}" >> "%LOG%"
+echo [update] install="{install}" >> "%LOG%"
 set /a n=0
 :waitloop
 tasklist /fi "imagename eq AIchan.exe" 2>nul | find /i "AIchan.exe" >nul
 if not errorlevel 1 (
   set /a n+=1
-  if %n% GEQ 20 (
-    echo [update] forcing taskkill of leftover AIchan.exe >> "%LOG%"
+  echo [update] waiting for exit !n! >> "%LOG%"
+  if !n! GEQ 15 (
+    echo [update] force killing leftover AIchan.exe >> "%LOG%"
     taskkill /f /im AIchan.exe >> "%LOG%" 2>&1
-    timeout /t 2 /nobreak >nul
+    ping 127.0.0.1 -n 3 >nul
     goto docopy
   )
-  timeout /t 1 /nobreak >nul
+  ping 127.0.0.1 -n 2 >nul
   goto waitloop
 )
 :docopy
-echo [update] copying files >> "%LOG%"
-robocopy "{src}" "{install}" /E /IS /IT /R:2 /W:1 /NFL /NDL /NJH /NJS >> "%LOG%" 2>&1
-echo [update] robocopy exit %errorlevel% >> "%LOG%"
+echo [update] copying >> "%LOG%"
+robocopy "{src}" "{install}" /E /IS /IT /R:3 /W:1 >> "%LOG%" 2>&1
+echo [update] robocopy exit=!errorlevel! >> "%LOG%"
+ping 127.0.0.1 -n 2 >nul
 echo [update] restarting >> "%LOG%"
 start "" "{exe}"
 echo [update] done >> "%LOG%"
@@ -152,7 +160,9 @@ del "%~f0"
 """
     bat.write_text(script, encoding="utf-8")
     log.info("更新スクリプトを起動して再起動します(ログ: %%TEMP%%\\aichan_update.log)")
-    flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
-             | getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags)
+    # CREATE_NO_WINDOW のみ(隠しコンソールで各コマンドが動き、親終了後も生存)。
+    # DETACHED_PROCESS との併用は不正でCreateProcessが失敗しうるため使わない。
+    subprocess.Popen(["cmd", "/c", str(bat)],
+                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                     close_fds=True)
     return True
