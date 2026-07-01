@@ -16,11 +16,13 @@ class ManagedProcess:
     """コマンドで起動し、ready_url が応答するまで待ち、終了時に停止する。"""
 
     def __init__(self, cmd: list[str], ready_url: str | None = None,
-                 name: str = "service") -> None:
+                 name: str = "service", stop_cmd: list[str] | None = None) -> None:
         self.cmd = cmd
         self.ready_url = ready_url
         self.name = name
+        self.stop_cmd = stop_cmd or []
         self.proc: subprocess.Popen | None = None
+        self._started = False   # 自分で起動した時だけ停止する
 
     def _ready(self) -> bool:
         if not self.ready_url:
@@ -35,11 +37,12 @@ class ManagedProcess:
         if not self.cmd:
             return False
         if self._ready():
-            log.info("%s は既に起動済み", self.name)
+            log.info("%s は既に起動済み(自動起動スキップ)", self.name)
             return True
         log.info("%s を自動起動: %s", self.name, " ".join(self.cmd))
         try:
             self.proc = subprocess.Popen(self.cmd)
+            self._started = True
         except Exception as e:
             log.warning("%s の起動に失敗: %s", self.name, e)
             return False
@@ -54,8 +57,14 @@ class ManagedProcess:
         return False
 
     def stop(self) -> None:
+        # 自分で起動した時のみ停止(既存の常駐サーバは殺さない)。
+        if self._started and self.stop_cmd:
+            log.info("%s 停止コマンド: %s", self.name, " ".join(self.stop_cmd))
+            try:
+                subprocess.run(self.stop_cmd, timeout=15)
+            except Exception as e:
+                log.warning("%s 停止コマンド失敗: %s", self.name, e)
         if self.proc and self.proc.poll() is None:
-            log.info("%s を停止", self.name)
             self.proc.terminate()
             try:
                 self.proc.wait(timeout=5)

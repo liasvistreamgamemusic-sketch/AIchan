@@ -13,8 +13,10 @@ from __future__ import annotations
 import logging
 import signal
 import sys
+import threading
 
 from PySide6.QtCore import QTimer
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
 from . import config
@@ -29,6 +31,8 @@ from .ui.character_window import CharacterWindow
 
 log = logging.getLogger(__name__)
 
+_INSTANCE_KEY = "AIchan-single-instance"
+
 
 def _install_sigint(app: QApplication) -> None:
     """Ctrl+C(SIGINT)で終了できるように(QtのC++ループ対策)。"""
@@ -36,6 +40,21 @@ def _install_sigint(app: QApplication) -> None:
     keepalive = QTimer(app)
     keepalive.start(200)
     keepalive.timeout.connect(lambda: None)
+
+
+def _acquire_single_instance() -> QLocalServer | None:
+    """多重起動防止。既に起動中なら None(そちらへ表示要求を送る)。"""
+    probe = QLocalSocket()
+    probe.connectToServer(_INSTANCE_KEY)
+    if probe.waitForConnected(300):
+        probe.write(b"show")
+        probe.waitForBytesWritten(300)
+        probe.disconnectFromServer()
+        return None
+    QLocalServer.removeServer(_INSTANCE_KEY)  # 前回の残骸を掃除
+    server = QLocalServer()
+    server.listen(_INSTANCE_KEY)
+    return server
 
 
 def main() -> int:
@@ -49,6 +68,12 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(False)
     _install_sigint(app)
 
+    # 多重起動防止: 既に起動中なら、そのウィンドウを前面に出して終了する
+    instance = _acquire_single_instance()
+    if instance is None:
+        log.info("すでに起動しています。二重起動を中止しました。")
+        return 0
+
     # 立ち絵チェック
     cdir = config.character_dir(cfg.character.id)
     if not cdir.is_dir() or not any(cdir.glob("*.png")):
@@ -59,19 +84,6 @@ def main() -> int:
             "python tools/remove_bg.py --id sumire\n"
         )
         return 1
-
-    # --- 外部サービス自動起動(任意) ---
-    # TTSサーバは TTSManager.start() が自動起動する(tts.autostart_server)。
-    # LMStudio は任意。llm.autostart=True かつ server_cmd 設定時のみ。
-    llm_proc = None
-    if cfg.llm.autostart and cfg.llm.server_cmd:
-        from .services import ManagedProcess
-        llm_proc = ManagedProcess(
-            cfg.llm.server_cmd,
-            ready_url=cfg.llm.base_url.rstrip("/") + "/models",
-            name="LMStudio",
-        )
-        llm_proc.start()
 
     # --- コア構築 ---
     db = MemoryDB()
@@ -87,6 +99,9 @@ def main() -> int:
 
     orch = Orchestrator(cfg, memory, llm, tts, hooks=window.make_hooks())
     window.controller = orch  # 入力欄 → orchestrator
+
+    # 二重起動を試みた別プロセスから通知が来たら前面表示
+    instance.newConnection.connect(lambda: _raise_window(window))
 
     # STT(マイク)。numpy等の重い依存を最小構成で避けるため遅延 import。
     mic = recognizer = None
@@ -108,38 +123,61 @@ def main() -> int:
         from .discord_bot.bot import DiscordBot
         discord_bot = DiscordBot(cfg.discord, orch)
 
-    # --- 起動 ---
-    tts.start()
+    # LMStudio 自動起動(任意)。停止コマンドも用意(未指定なら lms を自動推定)。
+    llm_proc = None
+    if cfg.llm.autostart and cfg.llm.server_cmd:
+        from .services import ManagedProcess
+        llm_stop = list(cfg.llm.stop_cmd)
+        if not llm_stop and "lms" in " ".join(cfg.llm.server_cmd):
+            llm_stop = ["cmd", "/c", "lms server stop"]
+        llm_proc = ManagedProcess(
+            cfg.llm.server_cmd,
+            ready_url=cfg.llm.base_url.rstrip("/") + "/models",
+            name="LMStudio", stop_cmd=llm_stop,
+        )
+
+    # --- 先にウィンドウ表示(サーバ起動を待たせない) ---
+    window.show()
+    _raise_window(window)
+    _log_status(cfg, llm, tts, recognizer)
+
+    # --- サービス起動(UIをブロックしない) ---
+    tts.start()                 # サーバ自動起動は内部で別スレッド
     orch.start()
     scheduler.start()
     if discord_bot:
         discord_bot.start()
     if mic is not None and cfg.stt.mode == "vad":
         mic.start_vad()
+    if llm_proc is not None:     # health待ちが長いので別スレッドで
+        threading.Thread(target=llm_proc.start, daemon=True).start()
 
-    window.show()
-    _log_status(cfg, llm, tts, recognizer)
-
-    # 起動時の自動アップデート確認(設定で無効化可)
     if cfg.update.auto_check:
         QTimer.singleShot(3000, lambda: window.check_updates(manual=False))
 
     def shutdown() -> None:
+        log.info("終了処理: サーバ停止中…")
         scheduler.stop()
         orch.stop()
-        tts.stop()
+        tts.stop()               # TTSサーバも stop_cmd / wsl pkill で停止
         if mic is not None:
             mic.stop()
         if discord_bot:
             discord_bot.stop()
         if llm_proc is not None:
-            llm_proc.stop()
+            llm_proc.stop()      # lms server stop 等
         window.state.save()
         db.close()
 
     app.aboutToQuit.connect(shutdown)
     run_event_loop = app.exec
     return run_event_loop()
+
+
+def _raise_window(window: CharacterWindow) -> None:
+    window.showNormal()
+    window.raise_()
+    window.activateWindow()
 
 
 def _log_status(cfg: AppConfig, llm: LLMClient, tts: TTSManager, rec) -> None:

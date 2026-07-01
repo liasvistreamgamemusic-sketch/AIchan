@@ -34,10 +34,11 @@ class TTSManager:
     def start(self) -> None:
         if not self.cfg.enabled:
             return
-        self.server.start()
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+        # サーバ自動起動はUIをブロックしないよう別スレッドで(health待ちが長いため)
+        threading.Thread(target=self.server.start, daemon=True).start()
 
     def stop(self) -> None:
         self._running = False

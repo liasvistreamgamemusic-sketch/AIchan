@@ -29,6 +29,7 @@ class LLMConfig:
     request_timeout: float = 120.0
     autostart: bool = False           # LMStudioサーバをアプリ起動時に自動起動するか
     server_cmd: list[str] = field(default_factory=list)  # 例: ["lms","server","start"]
+    stop_cmd: list[str] = field(default_factory=list)    # 終了時に実行 例: ["cmd","/c","lms server stop"]
 
 
 @dataclass
@@ -44,6 +45,7 @@ class TTSConfig:
     response_format: str = "wav"
     autostart_server: bool = False                 # subprocessで自動起動するか
     server_cmd: list[str] = field(default_factory=list)  # 起動コマンド
+    stop_cmd: list[str] = field(default_factory=list)    # 終了時に実行(未指定でもwsl起動なら自動でpkill)
     backend: str = "irodori"                       # irodori | aivis
 
 
