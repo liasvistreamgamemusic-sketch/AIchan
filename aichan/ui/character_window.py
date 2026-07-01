@@ -147,6 +147,8 @@ class CharacterWindow(QWidget):
         self.app_cfg = app_cfg
         self.theme = app_cfg.theme if app_cfg else None
         self.name = name
+        self.on_stay_running = None       # 更新しない場合にサービスを起動するコールバック
+        self._stayed = False
         self._pixmaps: dict[str, QPixmap] = {}
         self._drag_offset: QPoint | None = None
         self._anchor_bottom: int | None = None     # 足元の固定アンカー(画面座標)
@@ -238,6 +240,15 @@ class CharacterWindow(QWidget):
         dlg = SettingsDialog(self, self.app_cfg)
         dlg.exec()
 
+    # ---- 起動の続行(更新しない場合にサービスを起動) -----------------
+    def begin_running(self) -> None:
+        """更新しないと決まったら一度だけサービスを起動する(冪等)。"""
+        if self._stayed:
+            return
+        self._stayed = True
+        if self.on_stay_running:
+            self.on_stay_running()
+
     # ---- 自動アップデート --------------------------------------------
     def check_updates(self, manual: bool = False) -> None:
         """GitHub Releases を別スレッドで確認(結果は sigUpdate へ)。"""
@@ -256,6 +267,7 @@ class CharacterWindow(QWidget):
         if not info:
             if manual:
                 QMessageBox.information(self, "アップデート", "最新版を使用しています。")
+            self.begin_running()      # 更新なし → 通常起動
             return
         tag = info.get("tag", "")
         can_apply = updater.is_frozen() and bool(info.get("asset_url"))
@@ -263,7 +275,7 @@ class CharacterWindow(QWidget):
         if auto and can_apply:
             self.tray.showMessage("アップデート", f"{tag} をダウンロードして適用します",
                                   QSystemTrayIcon.Information, 4000)
-            self._begin_update(info)
+            self._begin_update(info)  # サービスは起動せず、更新→再起動
             return
         notes = (info.get("notes") or "")[:400]
         ret = QMessageBox.question(
@@ -272,12 +284,14 @@ class CharacterWindow(QWidget):
             QMessageBox.Yes | QMessageBox.No,
         )
         if ret != QMessageBox.Yes:
+            self.begin_running()      # 見送り → 通常起動
             return
         if can_apply:
-            self._begin_update(info)
+            self._begin_update(info)  # サービスは起動せず、更新→再起動
         else:
             import webbrowser
             webbrowser.open(info.get("html_url") or "")
+            self.begin_running()      # 開発実行等はブラウザを開いて通常起動
 
     def _begin_update(self, info) -> None:
         """更新のDL+適用を別スレッドで(UIを固めない)。完了で終了 or 失敗表示。"""
@@ -304,6 +318,7 @@ class CharacterWindow(QWidget):
                 "更新の適用に失敗しました。リリースページから手動で更新してください。\n"
                 "(詳細ログ: data フォルダの update.log)",
             )
+            self.begin_running()  # 失敗時はそのまま通常起動
 
     # ---- セットアップ -------------------------------------------------
     def _init_window(self) -> None:

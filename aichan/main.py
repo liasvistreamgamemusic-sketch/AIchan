@@ -154,21 +154,27 @@ def main() -> int:
     # --- 先にウィンドウ表示(サーバ起動を待たせない) ---
     window.show()
     _raise_window(window)
-    _log_status(cfg, llm, tts, recognizer)
 
-    # --- サービス起動(UIをブロックしない) ---
-    tts.start()                 # サーバ自動起動は内部で別スレッド
-    orch.start()
-    scheduler.start()
-    if discord_bot:
-        discord_bot.start()
-    if mic is not None and cfg.stt.mode == "vad":
-        mic.start_vad()
-    if llm_proc is not None:     # health待ちが長いので別スレッドで
-        threading.Thread(target=llm_proc.start, daemon=True).start()
+    # --- サービス起動は「更新しないと決まってから」実行する ---
+    # (先に更新確認 → 更新するなら、サーバ起動/終了の無駄を避けて即入れ替え)
+    def start_services() -> None:
+        _log_status(cfg, llm, tts, recognizer)
+        tts.start()                 # サーバ自動起動は内部で別スレッド
+        orch.start()
+        scheduler.start()
+        if discord_bot:
+            discord_bot.start()
+        if mic is not None and cfg.stt.mode == "vad":
+            mic.start_vad()
+        if llm_proc is not None:     # health待ちが長いので別スレッドで
+            threading.Thread(target=llm_proc.start, daemon=True).start()
 
+    window.on_stay_running = start_services
     if cfg.update.auto_check:
-        QTimer.singleShot(3000, lambda: window.check_updates(manual=False))
+        # 先に更新確認。更新しない/失敗なら window.begin_running() が start_services を呼ぶ。
+        QTimer.singleShot(600, lambda: window.check_updates(manual=False))
+    else:
+        window.begin_running()
 
     def shutdown() -> None:
         log.info("終了処理: サーバ停止中…")
